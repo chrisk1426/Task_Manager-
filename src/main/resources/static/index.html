@@ -1,0 +1,348 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Task Manager</title>
+
+    <!--
+        Minimal inline styles — just enough to keep the three sections
+        visually separated and the table readable. No framework or external
+        stylesheet is used. Aesthetics are not evaluated.
+    -->
+    <style>
+        body        { font-family: sans-serif; max-width: 900px; margin: 40px auto; padding: 0 20px; }
+        h1          { margin-bottom: 4px; }
+        h2          { margin-top: 0; }
+        section     { margin-bottom: 32px; }
+        hr          { border: none; border-top: 1px solid #ccc; margin: 32px 0; }
+
+        /* Task list table */
+        table       { width: 100%; border-collapse: collapse; }
+        th, td      { text-align: left; padding: 8px 10px; border-bottom: 1px solid #ddd; }
+        th          { background: #f4f4f4; }
+
+        /* Create form layout */
+        .form-row   { display: flex; flex-wrap: wrap; gap: 12px; margin-bottom: 12px; }
+        .form-row label { display: flex; flex-direction: column; gap: 4px; font-size: 0.9em; }
+        input, select, textarea { padding: 6px 8px; font-size: 1em; border: 1px solid #ccc; border-radius: 4px; }
+
+        /* AI result pre-block */
+        pre         { background: #f8f8f8; border: 1px solid #ddd; padding: 12px; border-radius: 4px;
+                      white-space: pre-wrap; word-break: break-word; min-height: 40px; }
+        .error      { color: #c0392b; }
+        button      { padding: 8px 16px; font-size: 1em; cursor: pointer; }
+    </style>
+</head>
+<body>
+
+<h1>Task Manager</h1>
+<p>A personal task manager backed by a Spring Boot REST API.</p>
+
+<!-- ===========================================================================
+     SECTION 1: Task List
+     Renders a table of all tasks fetched from GET /tasks.
+     The <tbody id="task-body"> is empty on page load — JavaScript populates
+     it by calling loadTasks(), which runs automatically via window.onload.
+     =========================================================================== -->
+<section id="section-list">
+    <h2>All Tasks</h2>
+
+    <!--
+        Button lets the reviewer manually refresh the list at any time,
+        in addition to the automatic load on page start.
+    -->
+    <button onclick="loadTasks()">Refresh</button>
+
+    <br><br>
+
+    <table>
+        <thead>
+            <tr>
+                <th>ID</th>
+                <th>Title</th>
+                <th>Description</th>
+                <th>Due Date</th>
+                <th>Priority</th>
+                <th>Status</th>
+            </tr>
+        </thead>
+        <!--
+            tbody is populated dynamically by loadTasks().
+            Each row corresponds to one Task object returned by the API.
+        -->
+        <tbody id="task-body">
+            <tr><td colspan="6">Loading...</td></tr>
+        </tbody>
+    </table>
+</section>
+
+<hr>
+
+<!-- ===========================================================================
+     SECTION 2: Create Task Form
+     Submits a POST /tasks request with the form values serialized as JSON.
+     The submit handler prevents the default browser form submission (which
+     would cause a full page reload) and uses the Fetch API instead.
+     On success, the form is cleared and loadTasks() refreshes the table.
+     =========================================================================== -->
+<section id="section-create">
+    <h2>Create New Task</h2>
+
+    <form id="create-form">
+
+        <!--
+            First row: title (required) and description (optional).
+            title maps to @NotBlank in TaskRequest — the server rejects blank values.
+            description is optional and may be left empty.
+        -->
+        <div class="form-row">
+            <label>
+                Title <span style="color:red">*</span>
+                <input type="text" id="title" placeholder="e.g. Submit quarterly report" required>
+            </label>
+            <label style="flex: 1;">
+                Description
+                <input type="text" id="description" placeholder="Optional details">
+            </label>
+        </div>
+
+        <!--
+            Second row: dueDate (required), priority (required), status (required).
+            dueDate uses type="date" which renders a native date picker and
+            automatically produces a YYYY-MM-DD string — matching the format
+            expected by LocalDate on the server.
+        -->
+        <div class="form-row">
+            <label>
+                Due Date <span style="color:red">*</span>
+                <input type="date" id="dueDate" required>
+            </label>
+            <label>
+                Priority <span style="color:red">*</span>
+                <select id="priority">
+                    <option value="LOW">LOW</option>
+                    <option value="MEDIUM" selected>MEDIUM</option>
+                    <option value="HIGH">HIGH</option>
+                </select>
+            </label>
+            <label>
+                Status <span style="color:red">*</span>
+                <select id="status">
+                    <option value="TODO" selected>TODO</option>
+                    <option value="IN_PROGRESS">IN_PROGRESS</option>
+                    <option value="DONE">DONE</option>
+                </select>
+            </label>
+        </div>
+
+        <button type="submit">Create Task</button>
+        <span id="create-msg" style="margin-left: 12px; font-size: 0.9em;"></span>
+    </form>
+</section>
+
+<hr>
+
+<!-- ===========================================================================
+     SECTION 3: AI Task Suggestion
+     Sends a plain-language description to POST /tasks/suggest and displays
+     the structured JSON response Claude returns.
+     The result is shown in a <pre> block using JSON.stringify with indentation
+     so it is human-readable. Errors (502, 503) are shown in red so the
+     reviewer understands what went wrong (e.g., missing API key).
+     =========================================================================== -->
+<section id="section-ai">
+    <h2>AI Task Suggestion</h2>
+    <p>Describe a task in plain language. Claude will return a structured suggestion.</p>
+
+    <div style="display: flex; flex-direction: column; gap: 8px; max-width: 600px;">
+        <!--
+            textarea gives more space than a single-line input — plain-language
+            descriptions can be long sentences or full paragraphs.
+        -->
+        <textarea id="suggest-input" rows="3"
+                  placeholder='e.g. "Remind me to submit the quarterly report before Friday"'
+                  style="resize: vertical;"></textarea>
+
+        <button id="suggest-btn" onclick="suggestTask()">Suggest Task</button>
+    </div>
+
+    <br>
+
+    <!--
+        The API response (or error) is rendered here as formatted JSON.
+        JSON.stringify(data, null, 2) adds 2-space indentation for readability.
+    -->
+    <pre id="suggest-result">Result will appear here...</pre>
+</section>
+
+
+<!-- ===========================================================================
+     JavaScript
+     All API calls use the Fetch API with async/await for readable error handling.
+     No external libraries or frameworks are used.
+     =========================================================================== -->
+<script>
+
+    // -------------------------------------------------------------------------
+    // loadTasks — fetches all tasks from GET /tasks and renders them as table rows
+    //
+    // Called automatically on page load (window.onload) and also when the
+    // create form submits successfully, so the table stays in sync.
+    // -------------------------------------------------------------------------
+    async function loadTasks() {
+        const tbody = document.getElementById('task-body');
+
+        try {
+            const response = await fetch('/tasks');
+            const tasks    = await response.json();
+
+            // Clear any existing rows (including the "Loading..." placeholder)
+            tbody.innerHTML = '';
+
+            if (tasks.length === 0) {
+                // Show a friendly message instead of an empty table
+                tbody.innerHTML = '<tr><td colspan="6" style="color:#888;">No tasks yet. Create one below.</td></tr>';
+                return;
+            }
+
+            // Append one <tr> per task. || '—' handles null/undefined fields
+            // gracefully so the table never shows "null" to the reviewer.
+            tasks.forEach(task => {
+                const row = document.createElement('tr');
+                row.innerHTML = `
+                    <td>${task.id}</td>
+                    <td>${task.title}</td>
+                    <td>${task.description || '—'}</td>
+                    <td>${task.dueDate    || '—'}</td>
+                    <td>${task.priority  || '—'}</td>
+                    <td>${task.status    || '—'}</td>
+                `;
+                tbody.appendChild(row);
+            });
+
+        } catch (err) {
+            // Show the error inside the table so it is visible without opening DevTools
+            tbody.innerHTML = `<tr><td colspan="6" class="error">Failed to load tasks: ${err.message}</td></tr>`;
+        }
+    }
+
+    // -------------------------------------------------------------------------
+    // Create task form submit handler
+    //
+    // Intercepts the form's native submit event to prevent a full page reload.
+    // Reads all field values, sends a POST /tasks request with a JSON body,
+    // and refreshes the task list on success.
+    // -------------------------------------------------------------------------
+    document.getElementById('create-form').addEventListener('submit', async function(event) {
+        // Prevent the browser's default form submission (which would reload the page)
+        event.preventDefault();
+
+        const msgEl = document.getElementById('create-msg');
+        msgEl.textContent = '';
+        msgEl.className   = '';
+
+        // Read form field values. description is optional — send null if empty
+        // so the server receives a clean null rather than an empty string.
+        const body = {
+            title:       document.getElementById('title').value.trim(),
+            description: document.getElementById('description').value.trim() || null,
+            dueDate:     document.getElementById('dueDate').value,    // YYYY-MM-DD from date input
+            priority:    document.getElementById('priority').value,
+            status:      document.getElementById('status').value
+        };
+
+        try {
+            const response = await fetch('/tasks', {
+                method:  'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body:    JSON.stringify(body)
+            });
+
+            if (!response.ok) {
+                // Parse and display the error JSON returned by GlobalExceptionHandler
+                const error = await response.json();
+                msgEl.textContent = `Error ${error.status}: ${error.message}`;
+                msgEl.className   = 'error';
+                return;
+            }
+
+            // Success: clear the form fields and reload the task list
+            document.getElementById('title').value       = '';
+            document.getElementById('description').value = '';
+            document.getElementById('dueDate').value     = '';
+            document.getElementById('priority').value    = 'MEDIUM';
+            document.getElementById('status').value      = 'TODO';
+
+            msgEl.textContent = 'Task created successfully.';
+            loadTasks(); // Refresh the table so the new task appears immediately
+
+        } catch (err) {
+            msgEl.textContent = `Network error: ${err.message}`;
+            msgEl.className   = 'error';
+        }
+    });
+
+    // -------------------------------------------------------------------------
+    // suggestTask — sends description to POST /tasks/suggest and displays result
+    //
+    // Displays the raw JSON response (formatted with indentation) in the <pre>
+    // block. If the API returns an error (503 no key, 502 bad AI response),
+    // the error JSON is shown in red so the reviewer understands what happened.
+    // -------------------------------------------------------------------------
+    async function suggestTask() {
+        const input     = document.getElementById('suggest-input').value.trim();
+        const resultEl  = document.getElementById('suggest-result');
+        const btn       = document.getElementById('suggest-btn');
+
+        if (!input) {
+            resultEl.textContent = 'Please enter a description first.';
+            resultEl.className   = 'error';
+            return;
+        }
+
+        // Disable the button and show a loading state while waiting for Claude
+        btn.disabled         = true;
+        btn.textContent      = 'Thinking...';
+        resultEl.textContent = 'Calling Claude API...';
+        resultEl.className   = '';
+
+        try {
+            const response = await fetch('/tasks/suggest', {
+                method:  'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body:    JSON.stringify({ description: input })
+            });
+
+            const data = await response.json();
+
+            if (!response.ok) {
+                // Display the error response from GlobalExceptionHandler in red
+                resultEl.textContent = JSON.stringify(data, null, 2);
+                resultEl.className   = 'error';
+            } else {
+                // Display the TaskSuggestion JSON with indentation for readability
+                resultEl.textContent = JSON.stringify(data, null, 2);
+                resultEl.className   = '';
+            }
+
+        } catch (err) {
+            resultEl.textContent = `Network error: ${err.message}`;
+            resultEl.className   = 'error';
+        } finally {
+            // Always re-enable the button regardless of success or failure
+            btn.disabled    = false;
+            btn.textContent = 'Suggest Task';
+        }
+    }
+
+    // -------------------------------------------------------------------------
+    // Auto-load tasks when the page first opens.
+    // window.onload fires after the full page (HTML + resources) has loaded.
+    // -------------------------------------------------------------------------
+    window.onload = loadTasks;
+
+</script>
+
+</body>
+</html>

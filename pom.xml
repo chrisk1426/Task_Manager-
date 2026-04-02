@@ -1,0 +1,108 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0
+             https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <!--
+        Spring Boot parent POM manages all dependency versions for us.
+        We inherit sensible defaults (plugin config, encoding, etc.)
+        so we don't need to specify versions on each dependency below.
+    -->
+    <parent>
+        <groupId>org.springframework.boot</groupId>
+        <artifactId>spring-boot-starter-parent</artifactId>
+        <version>3.4.1</version>
+        <relativePath/>
+    </parent>
+
+    <groupId>com.eulerity</groupId>
+    <artifactId>task-manager</artifactId>
+    <version>0.0.1-SNAPSHOT</version>
+    <name>task-manager</name>
+    <description>Personal Task Manager REST API</description>
+
+    <properties>
+        <!-- Target Java 17 for both compiler source and target -->
+        <java.version>17</java.version>
+    </properties>
+
+    <dependencies>
+
+        <!--
+            spring-boot-starter-web:
+            Brings in Spring MVC, an embedded Tomcat server, and Jackson (JSON).
+            This is what lets us define @RestController endpoints and have the
+            app run as a standalone HTTP server.
+        -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-web</artifactId>
+        </dependency>
+
+        <!--
+            spring-boot-starter-data-jpa:
+            Provides Spring Data JPA and Hibernate. Lets us define @Entity classes
+            that map to database tables and use JpaRepository for CRUD without
+            writing any SQL.
+        -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-data-jpa</artifactId>
+        </dependency>
+
+        <!--
+            spring-boot-starter-validation:
+            Enables Bean Validation (Jakarta Validation API + Hibernate Validator).
+            Required for @Valid on controller request bodies and @NotBlank on DTOs.
+            Without this, @Valid silently does nothing.
+        -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-validation</artifactId>
+        </dependency>
+
+        <!--
+            h2:
+            An in-memory relational database that runs inside the JVM.
+            No external database setup required — Spring Boot auto-configures it.
+            Marked runtime-only since we only need it when the app is running,
+            not at compile time.
+        -->
+        <dependency>
+            <groupId>com.h2database</groupId>
+            <artifactId>h2</artifactId>
+            <scope>runtime</scope>
+        </dependency>
+
+        <!--
+            spring-boot-starter-test:
+            Brings in JUnit 5, Mockito, MockMvc, and AssertJ for unit and
+            integration tests. Test scope means it is not included in the
+            final packaged artifact.
+        -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-test</artifactId>
+            <scope>test</scope>
+        </dependency>
+
+    </dependencies>
+
+    <build>
+        <plugins>
+            <!--
+                spring-boot-maven-plugin:
+                Packages the app as a self-contained executable JAR and enables
+                the `./mvnw spring-boot:run` command to start the application
+                directly from source without manually building first.
+            -->
+            <plugin>
+                <groupId>org.springframework.boot</groupId>
+                <artifactId>spring-boot-maven-plugin</artifactId>
+            </plugin>
+        </plugins>
+    </build>
+
+</project>
